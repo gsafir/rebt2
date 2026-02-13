@@ -294,6 +294,14 @@
         }
       };
 
+      const getDetectedBeliefsFromAnswers = (answers) => {
+        return [...new Set(
+          Object.values(answers)
+            .filter(option => option?.belief && (option.value === 'medium' || option.value === 'high'))
+            .map(option => option.belief)
+        )];
+      };
+
       const initializeConversation = (answers) => {
         const beliefNames = {
           demandingness: 'demanding that things must be a certain way',
@@ -302,14 +310,38 @@
           catastrophizing: 'catastrophizing potential outcomes'
         };
 
-        const detectedList = detectedBeliefs.map(b => beliefNames[b]).join(', ');
+        const sessionBeliefs = getDetectedBeliefsFromAnswers(answers);
+        const detectedList = sessionBeliefs.map(b => beliefNames[b]).join(', ');
         
         const initialMessage = {
           role: 'assistant',
-          content: `Based on your responses, I've noticed some patterns that might be worth exploring together. ${detectedBeliefs.length > 0 ? `You may be experiencing ${detectedList}.` : 'Let\'s explore your thinking patterns more deeply.'}\n\nThese are common cognitive patterns, and the good news is they can be examined and restructured. What would you like to explore first?`
+          content: `Based on your responses, I've noticed some patterns that might be worth exploring together. ${sessionBeliefs.length > 0 ? `You may be experiencing ${detectedList}.` : 'Let\'s explore your thinking patterns more deeply.'}\n\nThese are common cognitive patterns, and the good news is they can be examined and restructured. What would you like to explore first?`
         };
 
+        setDetectedBeliefs(sessionBeliefs);
         setMessages([initialMessage]);
+      };
+
+      const generateFallbackResponse = (text) => {
+        const normalized = text.toLowerCase();
+
+        if (normalized.includes('must') || normalized.includes('should')) {
+          return 'I hear a strong "must/should" in your thought. What changes if we reframe it to: "I strongly prefer this, but I can handle it if it does not happen"?';
+        }
+
+        if (normalized.includes('can\'t') || normalized.includes('unbearable')) {
+          return 'It sounds very uncomfortable, and that makes sense. Could we test the thought "I can\'t stand this" against evidence that it is hard, but still bearable?';
+        }
+
+        if (normalized.includes('failure') || normalized.includes('worthless')) {
+          return 'You may be rating your whole self based on one outcome. What if this means "I failed at this task" instead of "I am a failure"?';
+        }
+
+        if (normalized.includes('terrible') || normalized.includes('disaster') || normalized.includes('awful')) {
+          return 'This sounds like a catastrophizing thought. If the worst happened, what would be realistically bad, and what coping steps would still be possible?';
+        }
+
+        return 'Thank you for sharing that. What was the activating event, what belief showed up, and what emotion followed it? We can gently dispute the belief together.';
       };
 
       const handleSendMessage = async () => {
@@ -353,6 +385,10 @@ Respond as the REBT therapist:`
             })
           });
 
+          if (!response.ok) {
+            throw new Error(`AI request failed: ${response.status}`);
+          }
+
           const data = await response.json();
           const assistantMessage = {
             role: 'assistant',
@@ -364,7 +400,7 @@ Respond as the REBT therapist:`
           console.error('Error calling AI:', error);
           setMessages(prev => [...prev, {
             role: 'assistant',
-            content: 'I\'m having trouble connecting right now. Let\'s continue - what thoughts are coming up for you about this situation?'
+            content: generateFallbackResponse(inputMessage)
           }]);
         } finally {
           setIsLoading(false);
